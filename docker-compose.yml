@@ -1,0 +1,66 @@
+version: '3'
+
+services:
+  nginx:
+    container_name: processlogs.nginx
+    build:
+      context: ./deployment/nginx
+    volumes:
+      - ./deployment/nginx/conf.d/:/etc/nginx/conf.d
+      - ./static:/processlogs/static
+    restart: always
+    depends_on:
+      - django
+    networks:
+      - processlogs-network
+    ports:
+      - '8000:80'
+    logging:
+      options:
+        max-size: 10m
+
+  django:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .envs
+    volumes:
+      - ./:/processlogs
+    working_dir: /processlogs
+    command: >
+      bash -c "mkdir -p ./logs
+      && /wait-for-it.sh postgres:5432 -- python manage.py migrate
+      && python manage.py collectstatic --no-input
+      && python manage.py create_admin
+      && gunicorn processlogs.wsgi:application --bind 0.0.0.0:8000"
+    restart: always
+    depends_on:
+      - postgres
+    networks:
+      - processlogs-network
+    logging:
+      options:
+        max-size: 10m
+
+
+  postgres:
+    container_name: processlogs.postgres
+    image: postgres:11.1
+    env_file:
+      - .envs
+    volumes:
+      - /var/databases/processlogs/dev/data:/var/lib/postgresql/data
+    restart: always
+    networks:
+      - processlogs-network
+    ports:
+      - '5433:5432'
+    logging:
+      options:
+        max-size: 10m
+
+
+networks:
+  processlogs-network:
+    driver: bridge
